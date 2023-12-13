@@ -1,66 +1,85 @@
+import spacy
+from spacy.lang.en.stop_words import STOP_WORDS
+from string import punctuation
+import string
+from heapq import nlargest
+from transformers import pipeline
+from keybert import KeyBERT
 import streamlit as st
-import pdfplumber
 
-def pdftotxt(pdf_path):
-    with pdfplumber.open(pdf_path) as pdf:
-        with open("sample.txt", "a") as f:
-            for i, page in enumerate(pdf.pages):
-                file = page.extract_text()
-                f.write(file)
+def load_nlp_model():
+    return spacy.load('en_core_web_sm')
 
-    with open("sample.txt", "r") as f:
-        text = f.read()
+def preprocess_text(text):
+    return nlp(text)
 
-    return text
+def calculate_word_freq(doc):
+    word_freq = {}
+    for word in doc:
+        if word.text.lower() not in stopwords and word.text.lower() not in punctuation:
+            if word.text not in word_freq:
+                word_freq[word.text] = 1
+            else:
+                word_freq[word.text] += 1
+    return word_freq
 
-def simple_summary(text, sentence_count=5):
-    sentences = text.split('.')  # Split text into sentences
-    selected_sentences = sentences[:sentence_count]
-    summary_result = '. '.join(selected_sentences)
-    return summary_result
+
+
+def summarize_file(file):
+    doc = preprocess_text(file)
+    word_freqs = calculate_word_freq(doc)
+    sent_tokens = [sent for sent in doc.sents]
+    sentencescores = calculate_sentence_scores(sent_tokens, word_freqs)
+    select_length = int(len(sent_tokens) * 0.3)
+    summary_list = nlargest(select_length, sentencescores, key=sentencescores.get)
+    final_summary = [word.text for word in summary_list]
+    summary = ' '.join(final_summary)
+    return summary
+
+
+
+def extract_keywords(text):
+    kw_model = KeyBERT()
+    key_word = kw_model.extract_keywords(text, keyphrase_ngram_range=(1, 1), stop_words=None)
+    return [key[0] for key in key_word]
 
 def main():
-    """ EasyDoc """
+    """ EeasyDoc """
 
     # Title
-    st.title("EasyDoc")
+    st.title("EeasyDoc")
 
-    st.markdown("""
-      #### Description
-        + This is a Natural Language Processing(NLP) Based App useful for basic NLP tasks
-        Summarization
-        """)
-
-    # Upload PDF
-    uploaded_file = st.file_uploader("Choose a PDF file", type="pdf")
+    # Input Text
+    input_text = st.text_area("Enter Text", "Type Here ..")
 
     # Summarization
-    if uploaded_file is not None:
+    if st.checkbox("Show Summary"):
         st.subheader("Summarize Your Text")
-
-        # Read PDF content
-        pdf_text = pdftotxt(uploaded_file)
-
-        message = st.text_area("Enter Text", pdf_text)
-        summary_options = st.selectbox("Choose Summarizer", ['original summary'])
-
+        summary_options = st.selectbox("Choose Summarizer", ['orginal summary'])
         if st.button("Summarize"):
-            if summary_options == 'original summary':
-                st.text("Using original Summarizer ..")
-                summary_result = simple_summary(message)
-                st.success(summary_result)
-            else:
-                st.warning("Invalid summarizer option selected.")
+            if summary_options == 'orginal summary':
+                st.text("Using orginal Summarizer ..")
+                output = summarize_file(input_text)
+                st.success(output)
+                
+
+    # Keyword Extraction
+    if st.checkbox("Show Keyword Extraction"):
+        st.subheader("Extract Keywords")
+        if st.button("Extract"):
+            keywords = extract_keywords(input_text)
+            st.success(", ".join(keywords))
 
     st.sidebar.subheader("About App")
-    st.sidebar.text("NLPiffy App with Streamlit")
-    st.sidebar.info("Kudos to the Streamlit Team")
+    st.sidebar.text("Transforers model using summary, question-answer system, and other tasks in NLP App with Streamlit")
 
     st.sidebar.subheader("By")
-    st.sidebar.text("Anwesha Roy")
-    st.sidebar.text("Ashu Baghel")
-    st.sidebar.text("Harshika Saxena")
-    st.sidebar.text("Srishti Saxena")
+    st.sidebar.text("Tech warrior")
+
 
 if __name__ == '__main__':
+    nlp = load_nlp_model()
+    stopwords = list(STOP_WORDS)
+    punctuation = punctuation + '\n'
+    hugg = pipeline('question-answering', model="deepset/roberta-base-squad2", tokenizer="deepset/roberta-base-squad2")
     main()
